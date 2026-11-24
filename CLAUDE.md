@@ -1,4 +1,6 @@
-# CLAUDE.md — TEMMitoMacro
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## What this project is
 Two Fiji/ImageJ macros (`.ijm`) for semi-automated measurement of mitochondrial
@@ -15,6 +17,7 @@ against manual tracing.
 | `ROIBatchGen-windows.ijm` | Interactive. Opens each image in a folder; user draws ROIs (press `t` to add each to ROI Manager); saves `ROIs/ROIs-<image>.zip`. |
 | `EM-MitoMorphMacr-windows.ijm` | Batch. Preprocesses each image, thresholds to a binary mask, loads the matching ROI zip, runs Analyze Particles per ROI, saves count masks and `<condition>-Results.csv`, then computes summary metrics (form factor, area-weighted FF, aspect ratio). |
 | `README.md` | Short description; metrics follow Merrill, Flippo & Strack 2017. |
+| `TEMMitoMacro-fixes.patch` | Already applied (commit #2); kept only for reference. Don't re-apply. |
 
 Pipeline: images in one folder per condition → run ROIBatchGen → run EM-MitoMorph on
 the same folder → per-particle CSV + summary printed to the Log window.
@@ -26,6 +29,10 @@ the same folder → per-particle CSV + summary printed to the Log window.
   Prefer converting inputs to script parameters (`#@ File (style="directory") input`,
   `#@ String condition`, …) so the batch macro can run headless:
   `ImageJ-<platform> --headless --console -macro EM-MitoMorphMacr-windows.ijm "input=…,condition=…"`.
+- Recent Fiji (2.18+) names the launcher `fiji` rather than `ImageJ-<platform>`, e.g.
+  `/Applications/Fiji/fiji --headless --console -macro file.ijm` on macOS. A small
+  self-contained `.ijm` (no dialogs) runs this way, which is how to check a macro-language
+  idiom before relying on it.
 
 ## Language and coding conventions (ImageJ macro language)
 - Build paths with `File.separator`; `getDirectory()` already returns a trailing
@@ -35,7 +42,9 @@ the same folder → per-particle CSV + summary printed to the Log window.
 - Initialise every accumulator before use; end statements with `;`.
 - Call `run("Clear Results")` and reset the ROI Manager at the start of a run.
 - Don't change global Fiji settings (e.g. `setOption("BlackBackground", …)`) without
-  restoring the user's original value at the end.
+  restoring the user's original value at the end. The macro language has no getter for
+  BlackBackground; `blackBackgroundIsSet()` in EM-MitoMorph probes it (Convert to Mask
+  gives an inverting LUT exactly when it is false).
 - Use `setBatchMode(true)` in the non-interactive macro.
 - Keep the two macros consistent: same folder layout, same recursion behaviour,
   same naming of ROI zips.
@@ -61,17 +70,27 @@ the same folder → per-particle CSV + summary printed to the Log window.
 - Metric definitions: FF = P²/(4πA); area-weighted FF = Σ(P²/4π)/ΣA;
   AR = major/minor. Divide by totals, not by means.
 
-## Known issues (from code review, Nov 2026) — fix before trusting outputs
-1. `ar_sum`, `ff_sum`, `sum_a_sq` used without initialisation (summary block).
-2. `awff` is divided by mean area instead of total area → inflated by n.
-3. "Area2" = Σa² / (mean a)² → scales with particle count.
-4. `size=600-Infinity` is not in pixels if the image is calibrated.
-5. Results table has no image/ROI label; not cleared at start; summary only in Log.
-6. Zero ROIs for an image → `roiManager("delete")`/missing zip aborts the run.
-7. ROIBatchGen recurses into subfolders; EM-MitoMorph doesn't → subfolder images
-   get ROIs but are never analysed.
-8. `setOption("BlackBackground", false)` changes the user's global setting.
+## Known issues (code review, Nov 2026)
+Fixed (commit #2, plus #8 on 2026-11-25). Checked by reading the code; none has been
+run on real images yet:
+1. Summary accumulators are now initialised.
+2. Area-weighted FF divides by total area.
+3. Area2 = mean(a²)/mean(a)², independent of particle count.
+4. Size filter has the `pixel` keyword (still assumes one magnification; see Units).
+6. A missing ROI zip skips the image; `roiManager("reset")` replaces `("delete")`.
+   Untested: what ROIBatchGen saves when no ROI is drawn.
+7. Neither macro recurses into subfolders; use one folder per condition.
+8. The user's BlackBackground setting is saved at start and restored at the end
+   (probe verified headless in Fiji 2.18: reports true/false correctly and restores).
+
+Still open:
+5. Results are cleared at start and rows carry Condition/Image/ROI/ROIName, but the
+   summary metrics are only printed to the Log, not saved to a file.
 9. `exclude` drops particles touching the ROI border → bias if ROIs are drawn tightly.
+   Decide and document; it changes the numbers.
+10. Count-mask windows are still tracked by title (`"Mask-"+m`), against the
+    convention above.
+11. If the macro aborts mid-run, BlackBackground stays false (restore is only at the end).
 
 ## Testing
 No tests exist. Add:

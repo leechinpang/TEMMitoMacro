@@ -3,6 +3,8 @@ print("Input folder = " +input);
 File.makeDirectory(input+"Count Masks");
 run("Clear Results"); //start from an empty Results table so old rows are not mixed in
 roiManager("reset");
+//processFile() needs BlackBackground=false; remember the user's setting so it can be restored at the end.
+origBlackBackground = blackBackgroundIsSet();
 
 Dialog.create("Indicate Condition");
 Dialog.addString("Experimental condition in this folder", "control or treatment?");
@@ -15,6 +17,22 @@ Dialog.show();
 suffix = Dialog.getString();
 
 processFolder(input);
+
+//The macro language has no getter for BlackBackground, so probe it: Convert to Mask gives an
+//inverting LUT exactly when BlackBackground is false. Uses a throwaway 4x4 image.
+function blackBackgroundIsSet() {
+	wasBatch = is("Batch Mode");
+	setBatchMode(true);
+	newImage("BlackBackgroundProbe", "8-bit black", 4, 4, 1);
+	probe = getImageID();
+	setThreshold(0, 255);
+	run("Convert to Mask");
+	inverted = is("Inverting LUT");
+	selectImage(probe);
+	close();
+	setBatchMode(wasBatch);
+	return !inverted;
+}
 
 //Only the top-level folder is processed (no subfolders), matching ROIBatchGen.
 function processFolder(input) {
@@ -157,6 +175,7 @@ saveAs("Results", input+condition+"-Results with FF.csv"); //saves the results t
 //run("Close"); 	//closes all image windows
 close("Results");
 close("ROI manager");
+setOption("BlackBackground", origBlackBackground); //restore the user's global setting
 Dialog.create("Folder processing finished!");
 	Dialog.addMessage("All the images in the folder for <"+condition+"> have been processed and analysed.");
 	Dialog.show();
